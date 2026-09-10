@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบทะเบียนหนังสืออิเล็กทรอนิกส์</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: "Prompt", sans-serif; }
+    body { background: #f8fafc; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body class="min-h-screen text-slate-800">
+
+  <!-- LOGIN -->
+  <main id="loginView" class="min-h-screen flex items-center justify-center p-4">
+    <section class="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
+      <div class="px-8 pt-9 pb-7 text-center bg-gradient-to-b from-slate-50 to-white">
+        <div class="mx-auto w-20 h-20 rounded-2xl bg-slate-800 text-white flex items-center justify-center text-3xl shadow-lg">📚</div>
+        <h1 class="mt-5 text-2xl font-semibold">ระบบทะเบียนหนังสืออิเล็กทรอนิกส์</h1>
+        <p class="mt-2 text-sm text-slate-500">สำนักงานสาธารณสุขอำเภอโนนสะอาด</p>
+      </div>
+
+      <form id="loginForm" class="px-8 pb-9 space-y-5">
+        <div>
+          <label class="block text-sm font-medium mb-2">ชื่อผู้ใช้งาน</label>
+          <input id="username" autocomplete="username" required
+                 class="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-slate-400"
+                 placeholder="เช่น user004">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-2">รหัสผ่าน</label>
+          <input id="password" type="password" autocomplete="current-password" required
+                 class="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-slate-400"
+                 placeholder="กรอกรหัสผ่าน">
+        </div>
+        <button id="loginBtn" type="submit"
+                class="w-full rounded-xl bg-slate-800 hover:bg-slate-900 text-white py-3.5 font-medium transition">
+          เข้าสู่ระบบ
+        </button>
+        <p class="text-xs text-center text-slate-400">ระบบ V1.0</p>
+      </form>
+    </section>
+  </main>
+
+  <!-- APP -->
+  <div id="appView" class="hidden min-h-screen">
+    <header class="bg-slate-900 text-white sticky top-0 z-30 shadow">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
+        <div>
+          <h1 class="font-semibold text-lg sm:text-xl">ระบบทะเบียนหนังสืออิเล็กทรอนิกส์</h1>
+          <p class="text-xs text-slate-300 mt-0.5">สำนักงานสาธารณสุขอำเภอโนนสะอาด</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="changePasswordBtn" class="hidden sm:inline-flex px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">เปลี่ยนรหัสผ่าน</button>
+          <button id="logoutBtn" class="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm">ออกจากระบบ</button>
+        </div>
+      </div>
+    </header>
+
+    <div id="loadingBar" class="hidden h-1 bg-slate-200">
+      <div class="h-full bg-slate-800 animate-pulse w-full"></div>
+    </div>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      <section class="bg-white rounded-2xl border shadow-sm p-5 mb-6">
+        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div>
+            <div class="text-sm text-slate-500">ผู้ใช้งาน</div>
+            <div id="userName" class="text-xl font-semibold mt-1">-</div>
+            <div id="userPosition" class="text-sm text-slate-600 mt-1">-</div>
+            <div id="userRoles" class="text-xs text-slate-400 mt-1">-</div>
+          </div>
+          <div class="flex gap-2">
+            <button id="refreshBtn" class="px-4 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-50">↻ รีเฟรช</button>
+            <button data-role-menu class="hidden px-4 py-2.5 rounded-xl bg-slate-800 text-white">+ รับหนังสือ</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Dashboard cards -->
+      <section class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+        <div class="bg-white rounded-2xl border p-4 shadow-sm">
+          <div class="text-xs text-slate-500">เอกสารทั้งหมด</div>
+          <div id="totalDocs" class="text-2xl font-semibold mt-2">0</div>
+        </div>
+        <div class="bg-white rounded-2xl border p-4 shadow-sm">
+          <div class="text-xs text-slate-500">รอความเห็น</div>
+          <div id="countAssistant" class="text-2xl font-semibold mt-2">0</div>
+        </div>
+        <div class="bg-white rounded-2xl border p-4 shadow-sm">
+          <div class="text-xs text-slate-500">รอ สสอ.</div>
+          <div id="countSSO" class="text-2xl font-semibold mt-2">0</div>
+        </div>
+        <div class="bg-white rounded-2xl border p-4 shadow-sm">
+          <div class="text-xs text-slate-500">รอรับทราบ</div>
+          <div id="countAck" class="text-2xl font-semibold mt-2">0</div>
+        </div>
+        <div class="bg-white rounded-2xl border p-4 shadow-sm">
+          <div class="text-xs text-slate-500">กำลังดำเนินการ</div>
+          <div id="countProgress" class="text-2xl font-semibold mt-2">0</div>
+        </div>
+        <div class="bg-white rounded-2xl border p-4 shadow-sm">
+          <div class="text-xs text-slate-500">เสร็จสิ้น</div>
+          <div id="countCompleted" class="text-2xl font-semibold mt-2">0</div>
+        </div>
+      </section>
+
+      <!-- Documents -->
+      <section class="bg-white rounded-2xl border shadow-sm overflow-hidden">
+        <div class="p-5 border-b">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-semibold">รายการเอกสาร</h2>
+              <p class="text-sm text-slate-500 mt-1">แสดงเฉพาะเอกสารตามสิทธิ์ของผู้ใช้งาน</p>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-2">
+              <input id="documentSearch" class="rounded-xl border px-3 py-2 text-sm" placeholder="ค้นหาเลขทะเบียน / เรื่อง / หน่วยงาน">
+              <select id="typeFilter" class="rounded-xl border px-3 py-2 text-sm">
+                <option value="">ทุกประเภท</option>
+                <option value="INCOMING">หนังสือรับ</option>
+                <option value="OUTGOING">หนังสือส่งออก</option>
+                <option value="CIRCULAR">หนังสือเวียน</option>
+                <option value="ORDER">คำสั่ง</option>
+              </select>
+              <select id="statusFilter" class="rounded-xl border px-3 py-2 text-sm">
+                <option value="">ทุกสถานะ</option>
+                <option value="WAIT_ASSISTANT_OPINION">รอความเห็น ผช.สสอ.</option>
+                <option value="WAIT_SSO">รอ สสอ. พิจารณา</option>
+                <option value="WAIT_ACKNOWLEDGEMENT">รอรับทราบ</option>
+                <option value="IN_PROGRESS">กำลังดำเนินการ</option>
+                <option value="COMPLETED">เสร็จสิ้น</option>
+                <option value="CANCELLED">ยกเลิก</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 text-slate-500">
+              <tr>
+                <th class="text-left px-4 py-3">เลขทะเบียน/เลขที่</th>
+                <th class="text-left px-4 py-3">ประเภท</th>
+                <th class="text-left px-4 py-3">เรื่อง</th>
+                <th class="text-left px-4 py-3">วันที่</th>
+                <th class="text-left px-4 py-3">สถานะ</th>
+                <th class="text-right px-4 py-3">จัดการ</th>
+              </tr>
+            </thead>
+            <tbody id="documentRows" class="divide-y"></tbody>
+          </table>
+        </div>
+        <div id="emptyDocuments" class="hidden p-10 text-center text-slate-400">ไม่พบเอกสาร</div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Document modal -->
+  <div id="documentModal" class="hidden fixed inset-0 z-50 bg-black/40 p-4 overflow-y-auto">
+    <div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-2xl mt-8 mb-8">
+      <div class="p-5 border-b flex justify-between items-start gap-4">
+        <div>
+          <div class="text-xs text-slate-500">รายละเอียดเอกสาร</div>
+          <h2 id="modalTitle" class="text-xl font-semibold mt-1">-</h2>
+        </div>
+        <button id="closeDocumentBtn" class="text-slate-400 hover:text-slate-700 text-2xl">×</button>
+      </div>
+      <div class="p-5 space-y-7">
+        <div id="documentDetail"></div>
+        <div>
+          <h3 class="font-semibold mb-3">ไฟล์เอกสาร</h3>
+          <div id="fileList" class="space-y-2"></div>
+        </div>
+        <div>
+          <h3 class="font-semibold mb-3">ประวัติการดำเนินการ</h3>
+          <div id="workflowTimeline"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Password modal -->
+  <div id="passwordModal" class="hidden fixed inset-0 z-50 bg-black/40 p-4 overflow-y-auto">
+    <div class="max-w-md mx-auto bg-white rounded-2xl shadow-2xl mt-16">
+      <div class="p-5 border-b">
+        <h2 class="text-xl font-semibold">เปลี่ยนรหัสผ่าน</h2>
+        <p class="text-sm text-slate-500 mt-1">รหัสผ่านใหม่อย่างน้อย 6 ตัวอักษร</p>
+      </div>
+      <form id="changePasswordForm" class="p-5 space-y-4">
+        <input id="oldPassword" type="password" required class="w-full rounded-xl border px-4 py-3" placeholder="รหัสผ่านเดิม">
+        <input id="newPassword" type="password" required class="w-full rounded-xl border px-4 py-3" placeholder="รหัสผ่านใหม่">
+        <input id="confirmPassword" type="password" required class="w-full rounded-xl border px-4 py-3" placeholder="ยืนยันรหัสผ่านใหม่">
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" id="cancelPasswordBtn" class="px-4 py-2.5 rounded-xl border">ยกเลิก</button>
+          <button type="submit" class="px-4 py-2.5 rounded-xl bg-slate-800 text-white">บันทึกรหัสผ่าน</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="hidden"></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
