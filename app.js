@@ -2,6 +2,7 @@ const state={session:null,user:null,docs:[],currentDocument:null,currentTask:nul
 document.addEventListener("DOMContentLoaded",()=>{bind();restore()});
 const $=id=>document.getElementById(id);let apiBusy=0;
 function roles(){return state.user?.Roles||[]} function hasRole(r){return roles().includes(r)} function isAnyRole(a){return a.some(r=>roles().includes(r))}
+function updateV52AdminNav(){const el=$("adminNavGroup");if(!el)return;el.classList.toggle("hidden",!hasRole("ADMIN"))}
 function bind(){
  $("loginForm").addEventListener("submit",login);$("logoutBtn").onclick=logout;$("refreshBtn").onclick=dashboard;$("changePasswordBtn").onclick=()=>$("passwordModal").classList.remove("hidden");$("cancelPasswordBtn").onclick=()=>$("passwordModal").classList.add("hidden");$("changePasswordForm").addEventListener("submit",changePassword);
  $("documentSearch").oninput=debounce(loadDocs,300);$("statusFilter").onchange=loadDocs;$("typeFilter").onchange=loadDocs;$("newIncomingBtn").onclick=openIncoming;$("cancelIncomingBtn").onclick=closeIncoming;$("incomingForm").addEventListener("submit",saveIncoming);
@@ -94,7 +95,7 @@ function setupV52Layout(){
   $('adminPasswordForm')?.addEventListener('submit',submitAdminPassword);
   $('relatedOrgUnitID')?.addEventListener('change',()=>populateJobs('relatedOrgUnitID','relatedJobID'));
   $('outgoingGroup')?.addEventListener('change',()=>populateJobs('outgoingGroup','outgoingJob'));
-  if(isAnyRole(['ADMIN'])) $('adminNavGroup')?.classList.remove('hidden');
+  updateV52AdminNav();
   navigateV52('dashboardPage',document.querySelector('[data-page="dashboardPage"]'));
 }
 function navigateV52(pageId,btn){
@@ -118,6 +119,6 @@ function closeAdminPassword(){$('adminPasswordModal').classList.add('hidden');$(
 async function submitAdminPassword(e){e.preventDefault();const pw=$('adminTempPassword').value.trim();if(pw.length<6)return toast('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร','error');try{await api('adminResetPassword',{userId:$('adminPasswordUserId').value,newPassword:pw});closeAdminPassword();await Swal.fire({icon:'success',title:'ตั้งรหัสผ่านชั่วคราวสำเร็จ',html:`<div class="text-left">ผู้ใช้: <b>${esc($('adminPasswordUserName').textContent.replace('ผู้ใช้งาน: ',''))}</b><br>รหัสผ่านชั่วคราว: <b class="text-lg">${esc(pw)}</b><br><span class="text-sm text-slate-500">กรุณาส่งรหัสนี้ให้ผู้ใช้งาน และผู้ใช้จะต้องเปลี่ยนรหัสผ่านเมื่อเข้าสู่ระบบ</span></div>`});}catch(e){toast(e.message,'error')}}
 async function loadReportV52(){try{const r=await api('getReportSummary',{year:new Date().getFullYear()+543});const d=r.data||{};$('reportSummary').innerHTML=[['ทั้งหมด',d.total||0],['หนังสือรับ',d.byType?.INCOMING||0],['หนังสือออก',d.byType?.OUTGOING||0],['หนังสือเวียน',d.byType?.CIRCULAR||0]].map(x=>`<div class="kpi"><small>${x[0]}</small><b>${x[1]}</b></div>`).join('');const groups=d.byGroup||{};$('reportGroups').innerHTML=Object.entries(groups).map(([id,n])=>{const g=orgUnitsV52.find(x=>x.OrgUnitID===id);return `<div class="p-4 border rounded-xl flex justify-between"><span>${esc(g?.UnitName||id)}</span><b>${n}</b></div>`}).join('')||'<div class="text-slate-400">ยังไม่มีข้อมูล</div>'}catch(e){toast(e.message,'error')}}
 const _showAppV51=showApp;
-showApp=function(){_showAppV51();setupV52Layout();loadOrgUnitsV52();if(hasRole('ADMIN'))loadAdminUsers();};
+showApp=function(){_showAppV51();setupV52Layout();updateV52AdminNav();loadOrgUnitsV52();if(hasRole('ADMIN'))loadAdminUsers();};
 const _showLoginV51=showLogin;
 showLogin=function(){_showLoginV51();['dashboardPage','incomingPage','outgoingPage','reportPage','usersPage','settingsPage'].forEach(id=>$(id)?.classList.remove('active'));$('adminPasswordModal')?.classList.add('hidden');$('v52Sidebar')?.classList.remove('open');};
