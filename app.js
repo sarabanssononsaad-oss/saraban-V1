@@ -12,7 +12,7 @@ function restore(){try{const s=JSON.parse(localStorage.getItem(APP_CONFIG.SESSIO
 function loading(title="กำลังดำเนินการ...",text="กรุณารอสักครู่"){apiBusy++;if(apiBusy===1&&window.Swal)Swal.fire({title,text,allowOutsideClick:false,allowEscapeKey:false,showConfirmButton:false,didOpen:()=>Swal.showLoading()})}
 function loadingClose(){apiBusy=Math.max(0,apiBusy-1);if(apiBusy===0&&window.Swal&&Swal.isVisible())Swal.close()}
 async function api(action,p={},auth=true){const body={action,...p};if(auth&&state.session?.token)body.token=state.session.token;loading("กำลังเชื่อมต่อระบบ...","ระบบกำลังดำเนินการ กรุณารอสักครู่");try{const r=await fetch(APP_CONFIG.API_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:JSON.stringify(body)}),t=await r.text();let j;try{j=JSON.parse(t)}catch(e){throw Error("API ส่งข้อมูลกลับมาไม่ใช่ JSON")}if(!j.ok){if(j.error==="SESSION_EXPIRED")forceLogout();throw Error(j.error||"เกิดข้อผิดพลาด")}return j}finally{loadingClose()}}
-async function login(e){e.preventDefault();$("loginBtn").disabled=true;try{const r=await api("login",{username:$("username").value.trim(),password:$("password").value},false);state.session={token:r.data.token,user:r.data.user};state.user=r.data.user;localStorage.setItem(APP_CONFIG.SESSION_KEY,JSON.stringify(state.session));showApp();toast("เข้าสู่ระบบสำเร็จ","success");dashboard()}catch(e){toast(e.message,"error")}finally{$("loginBtn").disabled=false}}
+async function login(e){e.preventDefault();$("loginBtn").disabled=true;try{const r=await api("login",{username:$("username").value.trim(),password:$("password").value},false);state.session={token:r.data.token,user:r.data.user};state.user=r.data.user;localStorage.setItem(APP_CONFIG.SESSION_KEY,JSON.stringify(state.session));showApp();toast("เข้าสู่ระบบสำเร็จ","success");dashboard();if(r.data.user.MustChangePassword){setTimeout(()=>{if($("passwordModal")){$("passwordModal").classList.remove("hidden");$("oldPassword").focus();$("cancelPasswordBtn").classList.add("hidden");$("passwordModal").querySelector("h2").textContent="🔐 กรุณาเปลี่ยนรหัสผ่าน"}},250)}}catch(e){toast(e.message,"error")}finally{$("loginBtn").disabled=false}}
 async function logout(){try{await api("logout")}catch(e){}forceLogout("ออกจากระบบแล้ว")}
 function forceLogout(m=""){localStorage.removeItem(APP_CONFIG.SESSION_KEY);state.session=null;state.user=null;showLogin();if(m)toast(m)}
 function showLogin(){$("loginView").classList.remove("hidden");$("appView").classList.add("hidden")}
@@ -40,7 +40,7 @@ function renderDocumentActions(x){const b=$("documentActionBar");b.innerHTML="";
 function openIncoming(){$("incomingModal").classList.remove("hidden");const n=new Date();$("receiveDate").value=localDateInput(n);$("receiveTime").value=localTimeInput(n)}function closeIncoming(){$("incomingModal").classList.add("hidden");$("incomingForm").reset()}
 async function saveIncoming(e){e.preventDefault();const f=$("mainPdf").files[0];if(!f)return toast("กรุณาเลือก PDF","error");if(f.type!=="application/pdf")return toast("รองรับเฉพาะ PDF","error");if(f.size>10*1024*1024)return toast("ไฟล์เกิน 10 MB","error");const b=$("saveIncomingBtn");b.disabled=true;try{const p={DocumentType:"INCOMING",BookNo:$("bookNo").value.trim(),BookDate:$("bookDate").value,ReceiveDate:$("receiveDate").value,ReceiveTime:$("receiveTime").value,SenderName:$("senderName").value.trim(),SenderOrganization:$("senderOrganization").value.trim(),Subject:$("subject").value.trim(),RelatedOrgUnitID:$("relatedOrgUnitID").value.trim(),RelatedJobID:$("relatedJobID").value.trim(),UrgencyLevel:$("urgencyLevel").value,DueDate:$("dueDate").value};const r=await api("createDocument",{data:p}),documentId=r?.data?.DocumentID;if(!documentId)throw Error("API ไม่ได้ส่ง DocumentID กลับมา");const raw=await b64(f);if(!raw)throw Error("อ่านข้อมูล PDF ไม่สำเร็จ");await api("uploadFile",{documentId,fileName:f.name,mimeType:"application/pdf",base64:raw,fileRole:"MAIN_DOCUMENT"});closeIncoming();toast("บันทึกหนังสือรับสำเร็จ เลขรับ "+(r.data.RegisterNo||"-"),"success");dashboard()}catch(e){toast(e.message,"error")}finally{b.disabled=false}}
 function b64(f){return new Promise((res,rej)=>{const x=new FileReader();x.onload=()=>res(String(x.result).split(",")[1]);x.onerror=rej;x.readAsDataURL(f)})}
-async function changePassword(e){e.preventDefault();const n=$("newPassword").value;if(n.length<6)return toast("รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร","error");if(n!==$("confirmPassword").value)return toast("ยืนยันรหัสผ่านไม่ตรงกัน","error");try{await api("changePassword",{oldPassword:$("oldPassword").value,newPassword:n});$("passwordModal").classList.add("hidden");$("changePasswordForm").reset();toast("เปลี่ยนรหัสผ่านสำเร็จ","success")}catch(e){toast(e.message,"error")}}
+async function changePassword(e){e.preventDefault();const n=$("newPassword").value;if(n.length<6)return toast("รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร","error");if(n!==$("confirmPassword").value)return toast("ยืนยันรหัสผ่านไม่ตรงกัน","error");try{await api("changePassword",{oldPassword:$("oldPassword").value,newPassword:n});state.user.MustChangePassword=false;if(state.session)state.session.user=state.user;localStorage.setItem(APP_CONFIG.SESSION_KEY,JSON.stringify(state.session));$("passwordModal").classList.add("hidden");$("cancelPasswordBtn").classList.remove("hidden");$("passwordModal").querySelector("h2").textContent="เปลี่ยนรหัสผ่าน";$("changePasswordForm").reset();toast("เปลี่ยนรหัสผ่านสำเร็จ","success")}catch(e){toast(e.message,"error")}}
 function type(x){return({INCOMING:"หนังสือรับ",OUTGOING:"หนังสือส่งออก",CIRCULAR:"หนังสือเวียน",ORDER:"คำสั่ง"})[x]||x||"-"}function status(x){return({WAIT_ASSISTANT_OPINION:"รอความเห็น ผช.สสอ.",WAIT_SSO:"รอ สสอ. พิจารณา",WAIT_ACKNOWLEDGEMENT:"รอรับทราบ",IN_PROGRESS:"กำลังดำเนินการ",COMPLETED:"เสร็จสิ้น",CANCELLED:"ยกเลิก"})[x]||x||"-"}
 function workflowLabel(x){return({CREATE_DOCUMENT:"รับเอกสารเข้าระบบ",UPLOAD_FILE:"แนบไฟล์เอกสาร",SUBMIT_OPINION:"ความเห็น ผช.สสอ.โนนสะอาด",ASSIGN_DOCUMENT:"สสอ. มอบหมายผู้รับผิดชอบ",ACKNOWLEDGE:"ผู้รับมอบหมายรับทราบ/ปฏิบัติ",UPDATE_TASK:"บันทึกความคืบหน้าการดำเนินงาน",COMPLETE_TASK:"ดำเนินการเสร็จสิ้น",UPDATE_DOCUMENT:"แก้ไขข้อมูลทะเบียน",CANCEL_DOCUMENT:"ยกเลิกเอกสาร"})[x]||x||"-"}
 function badge(x){return`<span class="inline-flex px-2.5 py-1 rounded-full text-xs bg-slate-100">${esc(status(x))}</span>`}function item(a,b){return`<div><div class="text-xs text-slate-500">${esc(a)}</div><div class="font-medium">${esc(b)}</div></div>`}
@@ -65,3 +65,59 @@ async function saveOutgoing(e){e.preventDefault();const typev=$("outgoingType").
 async function loadOutgoingTable(){const el=$("outgoingRows");if(!el)return;try{const r=await api("getOutgoingDocuments",{documentType:$("outgoingTypeFilter")?.value||"",q:$("outgoingSearch")?.value.trim()||"",year:new Date().getFullYear()+543});const docs=r.data||[];el.innerHTML=docs.map((d,i)=>`<tr class="border-t"><td class="px-3 py-3">${i+1}</td><td class="px-3 py-3 font-medium">${esc(d.DocumentNo||"-")}</td><td class="px-3 py-3">${esc(formatThaiDate(d.BookDate))}</td><td class="px-3 py-3">${esc(d.SenderOrganization||"-")}</td><td class="px-3 py-3">${esc(d.Subject||"-")}</td><td class="px-3 py-3">${esc(d.SenderName||"-")}</td><td class="px-3 py-3">${esc(status(d.CurrentStatus))}</td><td class="px-3 py-3 text-right"><button class="text-blue-700" onclick="openDoc('${jse(d.DocumentID)}')">ดูรายละเอียด</button></td></tr>`).join("")||`<tr><td colspan="8" class="p-8 text-center text-slate-400">ยังไม่มีรายการ</td></tr>`}catch(e){toast(e.message,"error")}}
 let v5Initialized=false; function initV5(){if(v5Initialized)return; v5Initialized=true; if($("outgoingForm"))$("outgoingForm").addEventListener("submit",saveOutgoing);if($("cancelOutgoingBtn"))$("cancelOutgoingBtn").onclick=closeOutgoing;if($("outgoingSearch"))$("outgoingSearch").oninput=debounce(loadOutgoingTable,300);if($("outgoingTypeFilter"))$("outgoingTypeFilter").onchange=loadOutgoingTable;loadNumberStatus();loadOutgoingTable()}
 const _oldShowApp=showApp;showApp=function(){_oldShowApp();setTimeout(initV5,0)};window.openOutgoing=openOutgoing;window.closeOutgoing=closeOutgoing;window.loadOutgoingTable=loadOutgoingTable;
+
+/* ========================= V5.2 UI / ORG / ADMIN ========================= */
+let orgUnitsV52=[];
+function setupV52Layout(){
+  const content=document.querySelector('.v52-content');
+  if(!content)return;
+  const oldMain=content.querySelector('main.max-w-7xl');
+  const pages={dashboard:$('dashboardPage'),incoming:$('incomingPage'),outgoing:$('outgoingPage'),report:$('reportPage'),users:$('usersPage'),settings:$('settingsPage')};
+  if(!oldMain)return;
+  const workspace=document.createElement('div'); workspace.id='v52Workspace'; workspace.className='max-w-7xl mx-auto p-4 sm:p-6';
+  Object.values(pages).forEach(x=>{if(x){x.classList.remove('hidden');workspace.appendChild(x)}});
+  content.appendChild(workspace);
+  const kids=[...oldMain.children];
+  const userCard=kids[0], kpis=kids[1], assistant=$('assistantPanel'), docTable=kids.find(x=>x.querySelector&&x.querySelector('#documentSearch'));
+  if(userCard)pages.dashboard.appendChild(userCard);
+  if(kpis)pages.dashboard.appendChild(kpis);
+  if(docTable)pages.incoming.appendChild(docTable);
+  if(assistant)pages.incoming.insertBefore(assistant,docTable||null);
+  ['ssoPanel','staffPanel','outgoingSection'].forEach(id=>{const el=$(id);if(el){if(id==='outgoingSection')pages.outgoing.appendChild(el);else pages.incoming.insertBefore(el,docTable||null)}});
+  oldMain.remove();
+  document.querySelectorAll('[data-page]').forEach(btn=>btn.addEventListener('click',()=>navigateV52(btn.dataset.page,btn)));
+  document.querySelectorAll('[data-outgoing]').forEach(btn=>btn.addEventListener('click',()=>{navigateV52('outgoingPage',btn);setTimeout(()=>{if(btn.dataset.outgoing==='APPROVAL')openOutgoing('APPROVAL');else openOutgoing(btn.dataset.outgoing)},0)}));
+  $('mobileMenuBtn')?.addEventListener('click',()=>$('v52Sidebar')?.classList.toggle('open'));
+  $('refreshUsersBtn')?.addEventListener('click',loadAdminUsers);
+  $('cancelAdminPasswordBtn')?.addEventListener('click',closeAdminPassword);
+  $('generateTempPasswordBtn')?.addEventListener('click',()=>{$('adminTempPassword').value=generateTempPassword()});
+  $('adminPasswordForm')?.addEventListener('submit',submitAdminPassword);
+  $('relatedOrgUnitID')?.addEventListener('change',()=>populateJobs('relatedOrgUnitID','relatedJobID'));
+  $('outgoingGroup')?.addEventListener('change',()=>populateJobs('outgoingGroup','outgoingJob'));
+  if(isAnyRole(['ADMIN'])) $('adminNavGroup')?.classList.remove('hidden');
+  navigateV52('dashboardPage',document.querySelector('[data-page="dashboardPage"]'));
+}
+function navigateV52(pageId,btn){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const p=$(pageId); if(p)p.classList.add('active');
+  document.querySelectorAll('.navbtn').forEach(b=>b.classList.remove('active')); if(btn)btn.classList.add('active');
+  $('v52Sidebar')?.classList.remove('open');
+  if(pageId==='reportPage')loadReportV52();
+  if(pageId==='usersPage'&&hasRole('ADMIN'))loadAdminUsers();
+  if(pageId==='outgoingPage'){loadNumberStatus();loadOutgoingTable()}
+}
+async function loadOrgUnitsV52(){
+  try{const r=await api('getOrgUnits');orgUnitsV52=r.data||[];populateGroupSelect('relatedOrgUnitID');populateGroupSelect('outgoingGroup')}catch(e){toast(e.message,'error')}
+}
+function populateGroupSelect(id){const el=$(id);if(!el)return;const groups=orgUnitsV52.filter(x=>x.UnitType==='GROUP'&&x.Active);el.innerHTML='<option value="">เลือกกลุ่มงาน</option>'+groups.map(g=>`<option value="${esc(g.OrgUnitID)}">${esc(g.UnitName)}</option>`).join('')}
+function populateJobs(groupId,jobId){const g=$(groupId),j=$(jobId);if(!g||!j)return;j.innerHTML='<option value="">กรุณาเลือกงาน</option>';j.disabled=!g.value;if(!g.value)return;const jobs=orgUnitsV52.filter(x=>x.UnitType==='JOB'&&x.ParentID===g.value&&x.Active);j.innerHTML='<option value="">เลือกงาน</option>'+jobs.map(x=>`<option value="${esc(x.OrgUnitID)}">${esc(x.UnitName)}</option>`).join('')}
+function generateTempPassword(){const chars='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';let s='';for(let i=0;i<10;i++)s+=chars[Math.floor(Math.random()*chars.length)];return s}
+async function loadAdminUsers(){if(!hasRole('ADMIN'))return;try{const r=await api('getUsers');const rows=r.data||[];$('usersRows').innerHTML=rows.map(u=>`<tr><td>${esc(u.Username)}</td><td>${esc(u.FullName)}</td><td>${esc(u.Position)}</td><td>${esc((u.Roles||[]).join(', '))}</td><td>${u.Status==='ACTIVE'?'🟢 ใช้งาน':'🔴 ระงับ'}</td><td><button class="px-3 py-1.5 rounded-lg bg-slate-800 text-white text-xs" onclick="openAdminPassword('${jse(u.UserID)}','${jse(u.FullName)}')">🔑 ตั้งชั่วคราว</button></td></tr>`).join('')}catch(e){toast(e.message,'error')}}
+function openAdminPassword(userId,name){$('adminPasswordUserId').value=userId;$('adminPasswordUserName').textContent=`ผู้ใช้งาน: ${name}`;$('adminTempPassword').value=generateTempPassword();$('adminPasswordModal').classList.remove('hidden')}
+function closeAdminPassword(){$('adminPasswordModal').classList.add('hidden');$('adminPasswordForm').reset()}
+async function submitAdminPassword(e){e.preventDefault();const pw=$('adminTempPassword').value.trim();if(pw.length<6)return toast('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร','error');try{await api('adminResetPassword',{userId:$('adminPasswordUserId').value,newPassword:pw});closeAdminPassword();await Swal.fire({icon:'success',title:'ตั้งรหัสผ่านชั่วคราวสำเร็จ',html:`<div class="text-left">ผู้ใช้: <b>${esc($('adminPasswordUserName').textContent.replace('ผู้ใช้งาน: ',''))}</b><br>รหัสผ่านชั่วคราว: <b class="text-lg">${esc(pw)}</b><br><span class="text-sm text-slate-500">กรุณาส่งรหัสนี้ให้ผู้ใช้งาน และผู้ใช้จะต้องเปลี่ยนรหัสผ่านเมื่อเข้าสู่ระบบ</span></div>`});}catch(e){toast(e.message,'error')}}
+async function loadReportV52(){try{const r=await api('getReportSummary',{year:new Date().getFullYear()+543});const d=r.data||{};$('reportSummary').innerHTML=[['ทั้งหมด',d.total||0],['หนังสือรับ',d.byType?.INCOMING||0],['หนังสือออก',d.byType?.OUTGOING||0],['หนังสือเวียน',d.byType?.CIRCULAR||0]].map(x=>`<div class="kpi"><small>${x[0]}</small><b>${x[1]}</b></div>`).join('');const groups=d.byGroup||{};$('reportGroups').innerHTML=Object.entries(groups).map(([id,n])=>{const g=orgUnitsV52.find(x=>x.OrgUnitID===id);return `<div class="p-4 border rounded-xl flex justify-between"><span>${esc(g?.UnitName||id)}</span><b>${n}</b></div>`}).join('')||'<div class="text-slate-400">ยังไม่มีข้อมูล</div>'}catch(e){toast(e.message,'error')}}
+const _showAppV51=showApp;
+showApp=function(){_showAppV51();setupV52Layout();loadOrgUnitsV52();if(hasRole('ADMIN'))loadAdminUsers();};
+const _showLoginV51=showLogin;
+showLogin=function(){_showLoginV51();['dashboardPage','incomingPage','outgoingPage','reportPage','usersPage','settingsPage'].forEach(id=>$(id)?.classList.remove('active'));$('adminPasswordModal')?.classList.add('hidden');$('v52Sidebar')?.classList.remove('open');};
