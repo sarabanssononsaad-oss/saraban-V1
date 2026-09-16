@@ -1,13 +1,14 @@
-/* V5.3.3 SAFE FINAL */
-const state={session:null,user:null,docs:[],tasks:[],orgUnits:[],users:[],assignableUsers:[],currentDocument:null,outgoingOffset:0,outgoingLimit:10};
+/* V5.5.0 CONSOLIDATED PERFORMANCE SAFE FINAL */
+const state={session:null,user:null,docs:[],tasks:[],orgUnits:[],users:[],assignableUsers:[],currentDocument:null,outgoingOffset:0,outgoingLimit:10,syncVersion:'0',syncTimer:null,syncBusy:false};
 const $=id=>document.getElementById(id);let busy=0;
-const READ_ONLY_ACTIONS=new Set(['getCurrentUser','getDashboard','getMyTasks','getDocuments','getDocument','getWorkflow','getOrgUnits','getAssignableUsers','getUsers','getSettings','getNumberStatus','systemCheck','getOutgoingDocuments','getReportSummary']);
+const READ_ONLY_ACTIONS=new Set(['getCurrentUser','getDashboard','getMyTasks','getDocuments','getDocument','getWorkflow','getOrgUnits','getAssignableUsers','getUsers','getSettings','getNumberStatus','systemCheck','getOutgoingDocuments','getReportSummary','getSyncVersion']);
 const ROLE_LABEL={SSO:'สสอ.',ASSISTANT_SSO:'ผู้ช่วย สสอ.',REGISTRAR:'สารบรรณ',STAFF:'เจ้าหน้าที่',ADMIN:'ผู้ดูแลระบบ'};
 const TYPE_LABEL={INCOMING:'📥 หนังสือรับ',OUTGOING:'📘 หนังสือออก',CIRCULAR:'📢 หนังสือเวียน',ORDER:'📜 คำสั่ง',APPROVAL:'💰 อนุมัติเบิกจ่าย'};
 const STATUS_LABEL={WAIT_ASSISTANT_OPINION:'🟠 รอให้ความเห็น',WAIT_SSO:'🟡 รอ สสอ. พิจารณา',WAIT_ACKNOWLEDGEMENT:'🟣 รอรับทราบ',IN_PROGRESS:'🔵 กำลังดำเนินการ',COMPLETED:'🟢 เสร็จสิ้น',ISSUED:'🟢 ออกเลขแล้ว',CANCELLED:'🔴 ยกเลิก'};
 const TASK_STATUS_LABEL={OPINION_PENDING:'🟠 รอให้ความเห็น',ASSIGNED_ACTION:'🔵 รอดำเนินการ',ASSIGNED_ACK:'🟣 รอรับทราบ',ASSIGNED_BOTH:'🔵 รอดำเนินการ + รับทราบ',IN_PROGRESS:'🔵 กำลังดำเนินการ',IN_PROGRESS_BOTH:'🔵 กำลังดำเนินการ',ACKNOWLEDGED:'🔵 รับทราบแล้ว',COMPLETED:'🟢 เสร็จสิ้น',COMPLETED_OPINION:'🟢 ส่งความเห็นแล้ว',CANCELLED:'🔴 ยกเลิก'};
 
 document.addEventListener('DOMContentLoaded',()=>{bind();restore();});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkForFreshData(true)});
 function roles(){return state.user?.Roles||[]} function hasRole(r){return roles().includes(r)} function anyRole(a){return a.some(hasRole)}
 function bind(){
   $('loginForm').addEventListener('submit',login);$('logoutBtn').onclick=logout;$('refreshBtn').onclick=dashboard;$('mobileMenuBtn').onclick=()=>$('sidebar').classList.toggle('open');
@@ -21,15 +22,15 @@ function bind(){
   $('cancelTaskBtn').onclick=closeTask;$('completeTaskBtn').onclick=completeTask;
   $('closeDocumentBtn').onclick=closeDocument;$('cancelUserBtn').onclick=closeUser;$('userForm').addEventListener('submit',saveUser);$('newUserBtn').onclick=()=>openUser();$('cancelAdminPasswordBtn').onclick=closeAdminPassword;$('adminPasswordForm').addEventListener('submit',submitAdminPassword);$('generateTempPasswordBtn').onclick=()=>$('adminTempPassword').value=generateTempPassword();
   document.querySelectorAll('[data-close-modal]').forEach(b=>b.addEventListener('click',()=>{const fn=window[b.dataset.closeModal];if(typeof fn==='function')fn();}));
-  $('saveNumberBtn').onclick=saveNumberStart;$('runSystemCheckBtn').onclick=loadSystemCheck;
+  $('saveNumberBtn').onclick=saveNumberStart;$('runSystemCheckBtn').onclick=loadSystemCheck;startSyncMonitor();
 }
 function restore(){try{const s=JSON.parse(localStorage.getItem(APP_CONFIG.SESSION_KEY)||'null');if(!s?.token)return showLogin();state.session=s;state.user=s.user;showApp();dashboard();}catch(e){showLogin()}}
 function showLogin(){$('loginView').classList.remove('hidden');$('appView').classList.add('hidden')}
-function showApp(){$('loginView').classList.add('hidden');$('appView').classList.remove('hidden');$('userName').textContent=state.user?.FullName||'-';$('userPosition').textContent=state.user?.Position||'-';$('userRoles').textContent=roles().map(r=>ROLE_LABEL[r]||r).join(' · ');$('newIncomingBtn').classList.toggle('hidden',!anyRole(['ADMIN','REGISTRAR']));$('adminNav').classList.toggle('hidden',!hasRole('ADMIN'));updateBell(0)}
+function showApp(){$('loginView').classList.add('hidden');$('appView').classList.remove('hidden');startSyncMonitor();$('userName').textContent=state.user?.FullName||'-';$('userPosition').textContent=state.user?.Position||'-';$('userRoles').textContent=roles().map(r=>ROLE_LABEL[r]||r).join(' · ');$('newIncomingBtn').classList.toggle('hidden',!anyRole(['ADMIN','REGISTRAR']));$('adminNav').classList.toggle('hidden',!hasRole('ADMIN'));updateBell(0)}
 function navigate(page,btn){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));$(page)?.classList.add('active');document.querySelectorAll('.navbtn').forEach(x=>x.classList.remove('active'));btn?.classList.add('active');$('sidebar').classList.remove('open');if(page==='dashboardPage')dashboard();if(page==='tasksPage')loadTasks();if(page==='incomingPage')loadDocuments();if(page==='outgoingPage'){state.outgoingOffset=0;loadNumberStatus().then(()=>viewOutgoingRegister($('outgoingTypeFilter').value||'OUTGOING'))};if(page==='reportPage')loadReport();if(page==='usersPage'&&hasRole('ADMIN'))loadUsers();if(page==='settingsPage'&&hasRole('ADMIN')){loadNumberStatus();loadSystemCheck();}}
-async function api(action,p={},auth=true){
+async function api(action,p={},auth=true,opts={}){
   const body={action,...p};if(auth&&state.session?.token)body.token=state.session.token;
-  const retryable=READ_ONLY_ACTIONS.has(String(action));busy++;loading();
+  const retryable=READ_ONLY_ACTIONS.has(String(action)),silent=!!opts.silent;busy++;if(!silent)loading();
   try{
     let lastError=null;
     for(let attempt=0;attempt<(retryable?2:1);attempt++){
@@ -51,16 +52,46 @@ async function api(action,p={},auth=true){
       }
     }
     throw lastError||Error('เกิดข้อผิดพลาด');
-  }finally{busy--;if(!busy)loadingClose()}
+  }finally{busy--;if(!busy&&!silent)loadingClose()}
 }
 function delay(ms){return new Promise(r=>setTimeout(r,ms))}
+
+function startSyncMonitor(){
+  if(state.syncTimer||!state.session)return;
+  state.syncTimer=setInterval(()=>checkForFreshData(false),20000);
+}
+function stopSyncMonitor(){
+  if(state.syncTimer){clearInterval(state.syncTimer);state.syncTimer=null;}
+  state.syncBusy=false;
+}
+async function checkForFreshData(force=false){
+  if(!state.session||document.visibilityState==='hidden'||state.syncBusy)return;
+  if(!force && !document.querySelector('.page.active'))return;
+  state.syncBusy=true;
+  try{
+    const r=await api('getSyncVersion',{},true,{silent:true}),v=String(r.data??r.syncVersion??'0');
+    if(state.syncVersion==='0'){state.syncVersion=v;return;}
+    if(v!==state.syncVersion){
+      state.syncVersion=v;
+      const active=document.querySelector('.page.active')?.id||'';
+      if(active==='tasksPage'||active==='dashboardPage')await dashboard();
+      else if(state.currentDocument?.document?.DocumentID){
+        const id=state.currentDocument.document.DocumentID;
+        const rr=await api('getDocument',{documentId:id},true,{silent:true});
+        state.currentDocument=rr.data;renderDocumentModal(rr.data);
+      }
+    }
+  }catch(e){
+    // Background sync must never interrupt normal user work.
+  }finally{state.syncBusy=false;}
+}
 
 function loading(){if(window.Swal&&!Swal.isVisible())Swal.fire({title:'กำลังดำเนินการ...',text:'กรุณารอสักครู่',allowOutsideClick:false,allowEscapeKey:false,showConfirmButton:false,didOpen:()=>Swal.showLoading()})}
 function loadingClose(){if(window.Swal&&Swal.isVisible())Swal.close()}
 async function login(e){e.preventDefault();$('loginBtn').disabled=true;try{const r=await api('login',{username:$('username').value.trim(),password:$('password').value},false);state.session={token:r.data.token,user:r.data.user};state.user=r.data.user;localStorage.setItem(APP_CONFIG.SESSION_KEY,JSON.stringify(state.session));showApp();toast('เข้าสู่ระบบสำเร็จ','success');dashboard();if(r.data.user.MustChangePassword)openPassword(true)}catch(e){toast(e.message,'error')}finally{$('loginBtn').disabled=false}}
 async function logout(){try{await api('logout')}catch(e){}forceLogout('ออกจากระบบแล้ว')}
-function forceLogout(m=''){localStorage.removeItem(APP_CONFIG.SESSION_KEY);state.session=null;state.user=null;showLogin();if(m)toast(m)}
-async function dashboard(){try{const r=await api('getDashboard'),d=r.data||{},c=d.counts||{};$('pendingCount').textContent=d.pendingTasks||0;$('dashAssistant').textContent=c.WAIT_ASSISTANT_OPINION||0;$('dashSSO').textContent=c.WAIT_SSO||0;$('dashAck').textContent=c.WAIT_ACKNOWLEDGEMENT||0;$('dashProgress').textContent=c.IN_PROGRESS||0;$('dashCompleted').textContent=c.COMPLETED||0;updateBell(d.pendingTasks||0);await loadTasks(true);renderRecent(d.recent||[])}catch(e){toast(e.message,'error')}}
+function forceLogout(m=''){stopSyncMonitor();localStorage.removeItem(APP_CONFIG.SESSION_KEY);state.session=null;state.user=null;showLogin();if(m)toast(m)}
+async function dashboard(){try{const r=await api('getDashboard'),d=r.data||{},c=d.counts||{};$('pendingCount').textContent=d.pendingTasks||0;state.syncVersion=String(d.syncVersion??state.syncVersion??'0');$('dashAssistant').textContent=c.WAIT_ASSISTANT_OPINION||0;$('dashSSO').textContent=c.WAIT_SSO||0;$('dashAck').textContent=c.WAIT_ACKNOWLEDGEMENT||0;$('dashProgress').textContent=c.IN_PROGRESS||0;$('dashCompleted').textContent=c.COMPLETED||0;updateBell(d.pendingTasks||0);state.tasks=d.tasks||[];renderTasks(state.tasks);renderRecent(d.recent||[])}catch(e){toast(e.message,'error')}}
 async function loadTasks(silent=false){try{const r=await api('getMyTasks'),tasks=r.data||[];state.tasks=tasks;renderTasks(tasks);if(!silent)toast('รีเฟรชงานแล้ว','success')}catch(e){toast(e.message,'error')}}
 function renderTasks(tasks){const pending=tasks.filter(x=>x.Pending);$('taskCount').textContent=pending.length;const html=pending.map(t=>{const d=t.Document||{};const status=t.TaskLabel||TASK_STATUS_LABEL[t.Status]||t.Status;return `<div class="task-card"><div class="flex items-start justify-between gap-3"><div><div class="text-xs text-slate-500">${esc(TYPE_LABEL[d.DocumentType]||d.DocumentType||'เอกสาร')}</div><div class="font-semibold text-lg mt-1">${esc(d.RegisterNo||d.DocumentNo||'-')}</div><div class="mt-1">${esc(d.Subject||'-')}</div></div><span class="badge task-status-strong">${esc(status)}</span></div><div class="mt-3 text-sm text-slate-500">${esc(t.CommandText||'')}</div><div class="mt-4 flex gap-2 justify-end"><button class="btn-primary" onclick="openTask('${jse(d.DocumentID)}','${jse(t.AssignmentID||'')}')">เปิดงาน</button><button class="btn-secondary" onclick="openDoc('${jse(d.DocumentID)}')">ดูเอกสาร</button></div></div>`}).join('')||'<div class="empty">ไม่มีงานที่ต้องดำเนินการ</div>';if($('taskList'))$('taskList').innerHTML=html;if($('taskListPage'))$('taskListPage').innerHTML=html}
 function renderRecent(docs){$('recentList').innerHTML=(docs||[]).map(d=>`<div class="recent-row"><div><b>${esc(TYPE_LABEL[d.DocumentType]||d.DocumentType)}</b><div class="font-medium mt-1">${esc(d.RegisterNo||d.DocumentNo||'-')} — ${esc(d.Subject||'-')}</div></div><span>${esc(STATUS_LABEL[d.CurrentStatus]||d.CurrentStatus||'-')}</span><button class="text-slate-700 underline" onclick="openDoc('${jse(d.DocumentID)}')">เปิด</button></div>`).join('')||'<div class="empty">ยังไม่มีรายการ</div>'}
