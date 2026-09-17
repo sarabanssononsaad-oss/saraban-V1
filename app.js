@@ -1,5 +1,7 @@
-/* V5.5.1 WORKFLOW UX FIXES + PERFORMANCE BASELINE */
+/* V5.5.2 WORKFLOW UX + NON-BLOCKING LOADING + API TIMEOUT */
 const state={session:null,user:null,docs:[],tasks:[],orgUnits:[],users:[],assignableUsers:[],currentDocument:null,outgoingOffset:0,outgoingLimit:10,syncVersion:'0',syncTimer:null,syncBusy:false};
+const API_TIMEOUT_MS=20000;
+let loadingTimer=null;
 const $=id=>document.getElementById(id);let busy=0;
 const READ_ONLY_ACTIONS=new Set(['getCurrentUser','getDashboard','getMyTasks','getDocuments','getDocument','getWorkflow','getOrgUnits','getAssignableUsers','getUsers','getSettings','getNumberStatus','systemCheck','getOutgoingDocuments','getReportSummary','getSyncVersion']);
 const ROLE_LABEL={SSO:'สสอ.',ASSISTANT_SSO:'ผู้ช่วย สสอ.',REGISTRAR:'สารบรรณ',STAFF:'เจ้าหน้าที่',ADMIN:'ผู้ดูแลระบบ'};
@@ -34,8 +36,10 @@ async function api(action,p={},auth=true,opts={}){
   try{
     let lastError=null;
     for(let attempt=0;attempt<(retryable?2:1);attempt++){
+      const controller=typeof AbortController!=='undefined'?new AbortController():null;
+      const timer=controller?setTimeout(()=>controller.abort(),API_TIMEOUT_MS):null;
       try{
-        const r=await fetch(APP_CONFIG.API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8','Accept':'application/json, text/plain, */*'},cache:'no-store',body:JSON.stringify(body)});
+        const r=await fetch(APP_CONFIG.API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8','Accept':'application/json, text/plain, */*'},cache:'no-store',body:JSON.stringify(body),signal:controller?.signal});
         const txt=await r.text();
         let j;
         try{j=JSON.parse(txt)}catch(e){
@@ -46,10 +50,10 @@ async function api(action,p={},auth=true,opts={}){
         if(!j.ok){if(j.error==='SESSION_EXPIRED')forceLogout();throw Error(j.error||'เกิดข้อผิดพลาด');}
         return j;
       }catch(e){
-        lastError=e;
-        if(e?.message==='SESSION_EXPIRED'||!retryable||attempt+1>=2)throw e;
+        lastError=e?.name==='AbortError'?Error('การเชื่อมต่อใช้เวลานานเกินกำหนด กรุณาลองใหม่อีกครั้ง'):e;
+        if(lastError?.message==='SESSION_EXPIRED'||!retryable||attempt+1>=2)throw lastError;
         await delay(300);
-      }
+      }finally{if(timer)clearTimeout(timer)}
     }
     throw lastError||Error('เกิดข้อผิดพลาด');
   }finally{busy--;if(!busy&&!silent)loadingClose()}
@@ -86,8 +90,17 @@ async function checkForFreshData(force=false){
   }finally{state.syncBusy=false;}
 }
 
-function loading(){if(window.Swal&&!Swal.isVisible())Swal.fire({title:'กำลังดำเนินการ...',text:'กรุณารอสักครู่',allowOutsideClick:false,allowEscapeKey:false,showConfirmButton:false,didOpen:()=>Swal.showLoading()})}
-function loadingClose(){if(window.Swal&&Swal.isVisible())Swal.close()}
+function loading(){
+  const el=$('apiBusyIndicator');
+  if(!el)return;
+  el.classList.remove('hidden');
+  if(loadingTimer)clearTimeout(loadingTimer);
+  loadingTimer=setTimeout(()=>{if(busy>0)el.classList.remove('hidden')},API_TIMEOUT_MS+500);
+}
+function loadingClose(){
+  if(loadingTimer){clearTimeout(loadingTimer);loadingTimer=null;}
+  if(busy<=0)$('apiBusyIndicator')?.classList.add('hidden');
+}
 async function login(e){e.preventDefault();$('loginBtn').disabled=true;try{const r=await api('login',{username:$('username').value.trim(),password:$('password').value},false);state.session={token:r.data.token,user:r.data.user};state.user=r.data.user;localStorage.setItem(APP_CONFIG.SESSION_KEY,JSON.stringify(state.session));showApp();toast('เข้าสู่ระบบสำเร็จ','success');dashboard();if(r.data.user.MustChangePassword)openPassword(true)}catch(e){toast(e.message,'error')}finally{$('loginBtn').disabled=false}}
 async function logout(){try{await api('logout')}catch(e){}forceLogout('ออกจากระบบแล้ว')}
 function forceLogout(m=''){stopSyncMonitor();localStorage.removeItem(APP_CONFIG.SESSION_KEY);state.session=null;state.user=null;showLogin();if(m)toast(m)}
@@ -133,7 +146,7 @@ function findTaskAssignment(id){return state.tasks.find(t=>String(t.Document?.Do
 function closeTask(){$('taskModal').classList.add('hidden')}
 async function acknowledgeTask(){return completeTask()}
 async function updateTaskProgress(){return completeTask()}
-async function completeTask(){const documentId=$('taskDocumentId').value,assignmentId=$('taskAssignmentId').value,note=$('taskNote').value.trim(),b=$('completeTaskBtn');if(b.disabled)return;b.disabled=true;b.textContent='กำลังบันทึก...';try{await api('updateTask',{documentId:documentId,data:{status:'COMPLETED',note:note}});closeTask();await dashboard(true);toast('รับทราบ / เสร็จสิ้นแล้ว','success');const next=state.tasks.find(t=>t.Pending&&String(t.AssignmentID||'')!==String(assignmentId));if(next?.Document?.DocumentID){await openTask(next.Document.DocumentID,next.AssignmentID||'',true)}}catch(e){toast(e.message,'error')}finally{b.disabled=false;b.textContent='✅ รับทราบ / เสร็จสิ้น'}}
+async function completeTask(){const documentId=$('taskDocumentId').value,assignmentId=$('taskAssignmentId').value,note=$('taskNote').value.trim(),b=$('completeTaskBtn');if(b.disabled)return;b.disabled=true;b.textContent='กำลังบันทึก...';try{await api('updateTask',{documentId:documentId,data:{status:'COMPLETED',note:note}});closeTask();toast('รับทราบ / เสร็จสิ้นแล้ว','success');await dashboard(true);const next=state.tasks.find(t=>t.Pending&&String(t.AssignmentID||'')!==String(assignmentId));if(next?.Document?.DocumentID){await openTask(next.Document.DocumentID,next.AssignmentID||'',true)}}catch(e){toast(e.message,'error')}finally{b.disabled=false;b.textContent='✅ รับทราบ / เสร็จสิ้น'}}
 function openOutgoing(type){$('outgoingType').value=type||'OUTGOING';const m={OUTGOING:'📘 หนังสือออก',CIRCULAR:'📢 หนังสือเวียน',ORDER:'📜 คำสั่ง',APPROVAL:'💰 อนุมัติเบิกจ่าย'};$('outgoingTitle').textContent=m[$('outgoingType').value]||'ออกหนังสือราชการ';$('outgoingDate').value=localDateInput(new Date());$('outgoingFrom').value=APP_CONFIG.ORGANIZATION;$('outgoingOwner').value=state.user?.FullName||'';$('outgoingModal').classList.remove('hidden');loadOrgUnits()}
 function closeOutgoing(){$('outgoingModal').classList.add('hidden');$('outgoingForm').reset()}
 async function saveOutgoing(e){e.preventDefault();const date=$('outgoingDate').value,type=$('outgoingType').value;if(!date)return;const p={DocumentType:type,RegisterYear:new Date(date).getFullYear()+543,BookDate:date,SenderName:$('outgoingFrom').value.trim(),SenderOrganization:$('outgoingTo').value.trim(),Subject:$('outgoingSubject').value.trim(),RelatedOrgUnitID:$('outgoingGroup').value,RelatedJobID:$('outgoingJob').value,DueDate:$('outgoingDueDate').value,BookNo:$('outgoingBookNo').value.trim(),UrgencyLevel:'ปกติ'};const b=$('saveOutgoingBtn');b.disabled=true;try{const r=await api('createDocument',{data:p});closeOutgoing();toast(`ออกเลข ${r.data.DocumentNo} สำเร็จ`,'success');dashboard();state.outgoingOffset=0;loadOutgoingTable();loadNumberStatus()}catch(e){toast(e.message,'error')}finally{b.disabled=false}}
